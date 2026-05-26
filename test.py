@@ -93,7 +93,7 @@ chains_dir = f"chains{ANGLE}/mdc/{RUN_NAME}"
 
 
 prefix_psr = "J"
-Npsr = 20
+Npsr = 19
 coord = "cone"
 
 cap_angle = 40 * np.pi / 180.0
