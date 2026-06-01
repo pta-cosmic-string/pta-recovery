@@ -98,39 +98,46 @@ def _gw_source_unit_vector(gwtheta, gwphi):
 
 
 def _scaled_expi(w, switch=100.0, max_terms=50):
-    """Stable exp(-w) * Ei(w)."""
+    """
+    Вычисляет exp(-w) * Ei(w) устойчиво.
+    Для |w| < switch — напрямую.
+    Для |w| >= switch — через асимптотический ряд.
+    """
     w = np.asarray(w, dtype=np.complex128)
 
     if w.ndim == 0:
         if abs(w) < switch:
-            return np.exp(-w) * sp.special.expi(w)
+            return - np.exp(-w) * sp.special.exp1(-w)
         term = 1.0 / w
-        out = term
+        s = term
         for n in range(1, max_terms):
             term *= n / w
-            new = out + term
-            if abs(term) <= np.finfo(float).eps * max(1.0, abs(new)):
-                return new
-            out = new
-        return out
+            s_new = s + term
+            if abs(term) <= np.finfo(float).eps * abs(s_new):
+                return s_new
+            s = s_new
+        return s
 
     out = np.empty_like(w)
     small = np.abs(w) < switch
-    out[small] = np.exp(-w[small]) * sp.special.expi(w[small])
+    out[small] = - np.exp(-w[small]) * sp.special.exp1(w[small])
+
     big = ~small
     if np.any(big):
         wb = w[big]
         term = 1.0 / wb
-        ss = term.copy()
+        s = term.copy()
         for n in range(1, max_terms):
             term *= n / wb
-            new = ss + term
-            if np.all(np.abs(term) <= np.finfo(float).eps * np.maximum(1.0, np.abs(new))):
-                ss = new
+            s_new = s + term
+            if np.all(np.abs(term) <= np.finfo(float).eps * np.abs(s_new)):
+                s = s_new
                 break
-            ss = new
-        out[big] = ss
+            s = s_new
+        out[big] = s
+
     return out
+
 
 
 def _expi_stable(x, s, a, k):
@@ -267,26 +274,23 @@ def make_gaussian_orf_matrix(psr, gwtheta, gwphi, kappa):
 
     psrpos = np.array(psrpos)
 
-    ORF = np.zeros((Npulsars, Npulsars))
+    ORF = np.ones((Npulsars, Npulsars))
     ang_dist_arr = np.zeros((Npulsars, Npulsars))
 
     for i in range(Npulsars):
         for j in range(i, Npulsars):
             val = K_exp(_gw_source_unit_vector(gwtheta, gwphi), psrpos[i], psrpos[j], kappa)
             ang_dist_arr[i,j] = np.dot(psrpos[i], psrpos[j])
-            if not np.isfinite(val):
-                val = 0.0
 
             ORF[i, j] = val
             ORF[j, i] = val
-
+     
     ORF = 0.5 * (ORF + ORF.T)
 
     mineig = np.min(np.linalg.eigvalsh(ORF))
     if mineig <= 0:
-        ORF += (abs(mineig) + 1e-6) * np.eye(Npulsars)
-    ORF[np.abs(ORF)>10.] = 0.
-    print(max(ORF.reshape(-1)))        
+        ORF += (abs(mineig) + 1e-12) * np.eye(Npulsars)
+    print(ORF)      
     plt.plot(ang_dist_arr.reshape(-1), ORF.reshape(-1), ".")
     plt.ylim(-2, 2)
     plt.savefig("orf.png", dpi=300)
@@ -727,7 +731,7 @@ for ii in range(0, Npsr):
 
 gwtheta = np.pi / 2
 gwphi = np.pi / 2
-Amp = 7e-14
+Amp = 7e-13
 gamma = 0.1
 fgw = 3e-8
 howml = 2
@@ -918,9 +922,9 @@ groups = [range(0, ndim)]
 groups.extend(map(list, zip(range(0, ndim, 2), range(1, ndim, 2))))
 
 
-list_kappa=np.arange(0.1, 70, 1)
+list_kappa=np.arange(0.1, 2000, 1)
 
-list_likel = [pta.get_lnlikelihood([list_kappa[j], 2e-14]) for j in range(len(list_kappa))]
+list_likel = [pta.get_lnlikelihood([list_kappa[j], 7e-13]) for j in range(len(list_kappa))]
 
 print(list_kappa, list_likel)
 
