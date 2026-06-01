@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 
 import libstempo as T
 import libstempo.plot as LP
-import toasim as LT
+import libstempo.toasim as LT
 from libstempo.libstempo import GWB
 
 import dynesty
@@ -210,9 +210,10 @@ KAPPA_TAG = f"{KAPPA:g}"
 RUN_NAME = f"open2_gwb_kappa{KAPPA_TAG}"
 
 datadir_in = "./"
-datadir_out = f"psrE_kappa{KAPPA_TAG}/"
+os.makedirs("./data", exist_ok=True)
+datadir_out = f"data/psrE_kappa{KAPPA_TAG}/"
 outdir = f"{datadir_out}final"                                                                                                        ##############################
-chains_dir = f"chains_kappa{KAPPA_TAG}/mdc/{RUN_NAME}"
+chains_dir = f"data/chains_kappa{KAPPA_TAG}/mdc/{RUN_NAME}"
 
 
 prefix_psr = "J"
@@ -289,7 +290,7 @@ def make_gaussian_orf_matrix(psr, gwtheta, gwphi, kappa):
     print(max(ORF.reshape(-1)))        
     plt.plot(ang_dist_arr.reshape(-1), ORF.reshape(-1), ".")
     plt.ylim(-2, 2)
-    plt.savefig("orf.png", dpi=300)
+    plt.savefig("data/orf.png", dpi=300)
     return ORF
 
 
