@@ -97,39 +97,102 @@ def _gw_source_unit_vector(gwtheta, gwphi):
     ], dtype=float)
 
 
+def _scaled_expi(w, switch=10.0, max_terms=100):
+    """
+    Compute exp(-w)*Ei(w) in a stable way.
+    Actually returns -exp(-w)*E1(-w), which gives the same real part
+    for the combination in the likelihood.
+    """
+    w = np.asarray(w, dtype=np.complex128)
+    if w.ndim == 0:
+        if abs(w) < switch:
+            # Use -exp(-w) * E1(-w)
+            return -np.exp(-w) * sp.special.exp1(-w)
+        # Asymptotic series for large |w|
+        term = 1.0 / w
+        out = term
+        best = out
+        min_abs = abs(term)
+        for n in range(1, max_terms):
+            term *= n / w
+            new = out + term
+            abs_term = abs(term)
+            if abs_term > min_abs and n > 1:
+                return best
+            if abs_term < min_abs:
+                min_abs = abs_term
+                best = new
+            out = new
+        return best
+    else:
+        out_arr = np.empty_like(w, dtype=np.complex128)
+        small = np.abs(w) < switch
+        # Для маленьких |w| используем exp1
+        w_small = w[small]
+        out_arr[small] = -np.exp(-w_small) * sp.special.exp1(-w_small)
+        # Для больших — ряд (можно векторизовать циклом, но для простоты поэлементно)
+        big = ~small
+        if np.any(big):
+            w_big = w[big]
+            for idx, w0 in enumerate(w_big):
+                term = 1.0 / w0
+                out = term
+                best = out
+                min_abs = abs(term)
+                for n in range(1, max_terms):
+                    term *= n / w0
+                    new = out + term
+                    abs_term = abs(term)
+                    if abs_term > min_abs and n > 1:
+                        out_arr[big][idx] = best
+                        break
+                    if abs_term < min_abs:
+                        min_abs = abs_term
+                        best = new
+                    out = new
+                else:
+                    out_arr[big][idx] = best
+        return out_arr
+
 def _scaled_expi(w, switch=100.0, max_terms=50):
-    """Stable exp(-w) * Ei(w)."""
+    """
+    Вычисляет exp(-w) * Ei(w) устойчиво.
+    Для |w| < switch — напрямую.
+    Для |w| >= switch — через асимптотический ряд.
+    """
     w = np.asarray(w, dtype=np.complex128)
 
     if w.ndim == 0:
         if abs(w) < switch:
-            return np.exp(-w) * sp.special.expi(w)
+            return - np.exp(-w) * sp.special.exp1(-w)
         term = 1.0 / w
-        out = term
+        s = term
         for n in range(1, max_terms):
             term *= n / w
-            new = out + term
-            if abs(term) <= np.finfo(float).eps * max(1.0, abs(new)):
-                return new
-            out = new
-        return out
+            s_new = s + term
+            if abs(term) <= np.finfo(float).eps * abs(s_new):
+                return s_new
+            s = s_new
+        return s
 
     out = np.empty_like(w)
     small = np.abs(w) < switch
-    out[small] = np.exp(-w[small]) * sp.special.expi(w[small])
+    out[small] = - np.exp(-w[small]) * sp.special.exp1(w[small])
+
     big = ~small
     if np.any(big):
         wb = w[big]
         term = 1.0 / wb
-        ss = term.copy()
+        s = term.copy()
         for n in range(1, max_terms):
             term *= n / wb
-            new = ss + term
-            if np.all(np.abs(term) <= np.finfo(float).eps * np.maximum(1.0, np.abs(new))):
-                ss = new
+            s_new = s + term
+            if np.all(np.abs(term) <= np.finfo(float).eps * np.abs(s_new)):
+                s = s_new
                 break
-            ss = new
-        out[big] = ss
+            s = s_new
+        out[big] = s
+
     return out
 
 
@@ -139,6 +202,16 @@ def _expi_stable(x, s, a, k):
     norm = 2.0 * k * np.exp(-k * (a + 1.0)) / (-np.expm1(-2.0 * k))
     return norm * np.real(_scaled_expi(w))
 
+# def _expi_stable(x, s, a, k):
+#     z = x + 1j * s
+#     w = k * (z - a)
+#     norm = 2.0 * k * np.exp(-k * (a + 1.0)) / (-np.expm1(-2.0 * k))
+#     scaled = _scaled_expi(w)   # ваша исходная функция
+#     res = norm * np.real(scaled)
+#     if not np.isfinite(res) or abs(res) > 1e2:   # порог выброса
+#         print(f"Проблема: x={x}, s={s}, a={a}, k={k}")
+#         print(f"  w={w}, scaled={scaled}, norm={norm}")
+#     return res
 
 def _exp_minus_kmu_over_sinh_k(mu, k):
     """Stable exp(-k*mu) / sinh(k)."""
@@ -194,7 +267,7 @@ def K_exp(Omega, p1, p2, kappa):
             - (a + b) * (chc_2/2.0)
         )
         + 0.5 * (1.0 - c) * (
-            _expi_stable(t, s, a, k)
+            + _expi_stable(t, s, a, k)
             + _expi_stable(t, s, b, k)
             - _expi_stable(t, s, -1.0, k)
             - _expi_stable(t, s, +1.0, k)
@@ -210,6 +283,7 @@ KAPPA_TAG = f"{KAPPA:g}"
 RUN_NAME = f"open2_gwb_kappa{KAPPA_TAG}"
 
 datadir_in = "./"
+cgfgdir = "configs/"
 os.makedirs("./data", exist_ok=True)
 datadir_out = f"data/psrE_kappa{KAPPA_TAG}/"
 outdir = f"{datadir_out}final"                                                                                                        ##############################
@@ -217,14 +291,14 @@ chains_dir = f"data/chains_kappa{KAPPA_TAG}/mdc/{RUN_NAME}"
 
 
 prefix_psr = "J"
-Npsr = 20
+Npsr = 400
 coord = "cone"
 
-cap_angle =180 * np.pi / 180.0
+cap_angle = 180 * np.pi / 180.0
 ra0 = np.pi / 2
 dec0 = 0
 
-psrcat_cat = np.genfromtxt(datadir_in + "psrcat_data.txt", skip_header=1, dtype="str", unpack=True)
+psrcat_cat = np.genfromtxt(datadir_in + cgfgdir +  "psrcat_data.txt", skip_header=1, dtype="str", unpack=True)
 rand_n = np.random.choice(len(psrcat_cat.T), Npsr, replace=False)
 num_cat, pmra_cat, pmdec_cat, px_cat, rajd_cat, decjd_cat, f0_cat, f1_cat, dm_cat = psrcat_cat
 
@@ -286,10 +360,10 @@ def make_gaussian_orf_matrix(psr, gwtheta, gwphi, kappa):
     mineig = np.min(np.linalg.eigvalsh(ORF))
     if mineig <= 0:
         ORF += (abs(mineig) + 1e-6) * np.eye(Npulsars)
-    ORF[np.abs(ORF)>10.] = 0.
-    print(max(ORF.reshape(-1)))        
+    # ORF[np.abs(ORF)>10.] = 0.
+    # print(max(ORF.reshape(-1)))        
     plt.plot(ang_dist_arr.reshape(-1), ORF.reshape(-1), ".")
-    plt.ylim(-2, 2)
+    # plt.ylim(-2, 2)
     plt.savefig("data/orf.png", dpi=300)
     return ORF
 
@@ -649,8 +723,8 @@ for numb in range(0, Npsr):
     name_psr = "J0030+0451-simulate"
 
     psr = T.tempopulsar(
-        parfile=datadir_in + name_psr + ".par",
-        timfile=datadir_in + name_psr + ".tim"
+        parfile=datadir_in + cgfgdir + name_psr + ".par",
+        timfile=datadir_in + cgfgdir + name_psr + ".tim"
     )
 
     # intentionally left unchanged per your request
@@ -872,13 +946,7 @@ rn = gp_signals.FourierBasisGP(spectrum=pl, components=30, Tspan=Tspan)
 
 gwtheta =  parameter.Constant(np.pi/2.)("gw_theta")
 gwphi = parameter.Constant(np.pi/2.)("gw_phi")
-kappa = parameter.Uniform(0.1, 300)("gw_kappa")
-
-
-
-
-
-
+kappa = parameter.Uniform(0.1, 100)("gw_kappa")
 
 
 
@@ -919,7 +987,7 @@ groups = [range(0, ndim)]
 groups.extend(map(list, zip(range(0, ndim, 2), range(1, ndim, 2))))
 
 
-list_kappa=np.arange(0.1, 70, 1)
+list_kappa=np.arange(0.1, 100, 1)
 
 list_likel = [pta.get_lnlikelihood([list_kappa[j], 2e-14]) for j in range(len(list_kappa))]
 
