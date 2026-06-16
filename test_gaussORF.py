@@ -177,7 +177,7 @@ def _scaled_expi(w, switch=100.0, max_terms=50):
 
     out = np.empty_like(w)
     small = np.abs(w) < switch
-    out[small] = - np.exp(-w[small]) * sp.special.exp1(w[small])
+    out[small] = - np.exp(-w[small]) * sp.special.exp1(-w[small])
 
     big = ~small
     if np.any(big):
@@ -241,6 +241,10 @@ def K_exp(Omega, p1, p2, kappa):
     b = float(np.clip(np.dot(Omega, p2), -1.0 + 1e-12, 1.0 - 1e-12))
     c = float(np.clip(np.dot(p1, p2), -1.0 + 1e-12, 1.0 - 1e-12))
 
+    factor = 1
+    if np.dot(p1, p2) == np.dot(p1, p1):
+        factor = 2
+
     k = float(kappa)
     if not np.isfinite(k) or k <= 0.0:
         raise ValueError("kappa must be positive and finite")
@@ -259,7 +263,7 @@ def K_exp(Omega, p1, p2, kappa):
     one_minus_a2 = max(1e-12, 1.0 - a*a)
     one_minus_b2 = max(1e-12, 1.0 - b*b)
 
-    return 3.0 * (
+    return 3.0 * factor * (
         1.0/3.0
         + 0.5 * (
             c * (chc_a + chc_b - chc_3/3.0)
@@ -291,7 +295,7 @@ chains_dir = f"data/chains_kappa{KAPPA_TAG}/mdc/{RUN_NAME}"
 
 
 prefix_psr = "J"
-Npsr = 400
+Npsr = 50
 coord = "cone"
 
 cap_angle = 180 * np.pi / 180.0
@@ -987,7 +991,7 @@ groups = [range(0, ndim)]
 groups.extend(map(list, zip(range(0, ndim, 2), range(1, ndim, 2))))
 
 
-list_kappa=np.arange(0.1, 100, 1)
+list_kappa=np.linspace(0.1, KAPPA*2, 1000)
 
 list_likel = [pta.get_lnlikelihood([list_kappa[j], 2e-14]) for j in range(len(list_kappa))]
 
