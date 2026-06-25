@@ -1,0 +1,25 @@
+name: pta
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - jupyter
+  - numpy
+  - scipy
+  - pandas
+  - matplotlib
+  - corner
+  - tqdm
+  - healpy
+  - astropy
+  - psrqpy
+  - libstempo
+  - enterprise-pulsar
+  - enterprise_extensions
+  - dynesty
+  - ptmcmcsampler
+  - setuptools==70.0.0
+  - pip:
+    - logging
+    - colorlog
